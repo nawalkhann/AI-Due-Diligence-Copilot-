@@ -14,7 +14,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const next = typeof params.next === "string" ? params.next : "/app";
   const error =
     params.error === "config" || !supabaseConfigured
-      ? "Sign-in is not configured yet. Set the Supabase environment variables."
+      ? "Early access sign-ups are opening soon. Please check back shortly."
       : params.error === "link"
         ? "That sign-in link is invalid or has expired."
         : undefined;
