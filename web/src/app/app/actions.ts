@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export interface FormState {
@@ -34,9 +35,31 @@ export async function createCompany(
   return {};
 }
 
+/**
+ * Wake the ingestion worker. It runs as a serverless function and claims queued
+ * jobs itself, so this only needs to ask it to look; the call runs after the
+ * response is sent so the user never waits on it.
+ */
+export async function kickIngestion() {
+  const url = process.env.WORKER_DRAIN_URL;
+  const secret = process.env.WORKER_DRAIN_SECRET;
+  if (!url || !secret) return;
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return;
+  after(async () => {
+    try {
+      await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${secret}` } });
+    } catch (err) {
+      console.error("could not reach ingestion worker", err);
+    }
+  });
+}
+
 export async function retryDocument(workspaceId: string, documentId: string) {
   const supabase = await createClient();
-  await supabase.rpc("queue_document", { doc_id: documentId });
+  const { error } = await supabase.rpc("queue_document", { doc_id: documentId });
+  if (!error) await kickIngestion();
   revalidatePath(`/app/w/${workspaceId}`);
 }
 

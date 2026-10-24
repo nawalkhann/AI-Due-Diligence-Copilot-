@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "api/drain.py": { "maxDuration": 300, "memory": 2048 }
+  },
+  "crons": [{ "path": "/api/drain", "schedule": "0 6 * * *" }]
+}

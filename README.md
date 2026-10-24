@@ -11,7 +11,8 @@ opportunities and executive summaries with page-level citations.
 | `supabase/migrations/` | Postgres schema: workspaces, documents, pages, chunks (pgvector), ingestion queue, row level security, storage policies |
 | `supabase/tests/local_bootstrap.sql` | Stand-ins for Supabase's `auth` and `storage` schemas so migrations can be tested on plain Postgres. Never run against Supabase. |
 | `worker/` | Python ingestion worker: parses PDF, HTML/EDGAR, Excel, PowerPoint, Word, CSV and text; chunks by structure; embeds with Voyage; writes pages and chunks |
-| `web/` | Next.js app: public SEO site and guides, sign-in, workspaces, uploads and processing status |
+| `web/` | Next.js app: public SEO site and guides, sign-in, workspaces, uploads, cited Q&A chat, reports, document viewer |
+| `worker/api/drain.py` | Serverless entry point so the worker can run as a Vercel Python function |
 
 ## How ingestion works
 
@@ -25,6 +26,22 @@ opportunities and executive summaries with page-level citations.
    document's pages and chunks in one transaction.
 4. Transient failures retry with backoff (1, 4, 16 minutes). Bad files fail
    straight away with a readable error shown in the UI.
+
+## How answers are produced
+
+1. The question is embedded with Voyage (`voyage-finance-2`, `input_type: query`).
+2. `match_chunks()` runs a hybrid search inside Postgres: vector similarity and
+   full-text ranking merged with reciprocal rank fusion. It runs as the
+   signed-in user, so row level security limits results to their workspaces.
+3. The top passages go to Claude (`claude-opus-5-5`) as numbered sources with
+   strict grounding rules. Every sentence must cite `[S#]`; the UI turns each
+   citation into a link to the exact page in the document viewer.
+4. Reports (risk, growth, executive summary) run several targeted searches,
+   merge the passages and generate a structured, cited write-up that is saved
+   to the `reports` table. Questions and reports are written to `audit_events`.
+
+Refusals fall back server-side (`fallbacks: "default"`), and answers that
+would need information outside the sources say so instead of guessing.
 
 ## Local development
 
@@ -49,10 +66,15 @@ npm install && npm run dev
    `supabase/migrations/` in order (`supabase db push` or the SQL editor).
    In Auth settings, set the Site URL to your domain and add
    `https://<domain>/auth/callback` to the redirect URLs.
-2. **Worker**: build `worker/Dockerfile` and run it on any container host
-   (Fly.io, Railway, Render, ECS) with the variables in `worker/.env.example`.
+2. **Worker**: either deploy `worker/` as its own Vercel project (Python
+   runtime; `api/drain.py` is woken by the web app after each upload and by a
+   daily cron), or build `worker/Dockerfile` and run `ddc-worker run` on any
+   container host. Set the variables in `worker/.env.example`, plus
+   `DDC_DRAIN_SECRET` (and `CRON_SECRET` with the same value) for the
+   serverless option.
 3. **Web**: import the repo into Vercel with root directory `web` and set the
-   variables in `web/.env.example`. `NEXT_PUBLIC_SITE_URL` must be the final
+   variables in `web/.env.example` (`ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`,
+   Supabase URL and anon key, worker URL and secret). `NEXT_PUBLIC_SITE_URL` must be the final
    https URL of your domain.
 
 ## Search Console

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Company, DocumentRow, Role } from "@/lib/types";
@@ -14,9 +13,8 @@ export default async function WorkspacePage({ params }: PageProps<"/app/w/[works
 
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
-  const [{ data: workspace }, { data: member }, { data: companies }, { data: documents }] =
+  const [{ data: member }, { data: companies }, { data: documents }] =
     await Promise.all([
-      supabase.from("workspaces").select("id, name").eq("id", workspaceId).maybeSingle(),
       supabase
         .from("workspace_members")
         .select("role")
@@ -34,18 +32,14 @@ export default async function WorkspacePage({ params }: PageProps<"/app/w/[works
     ]);
 
   // RLS returns nothing for workspaces the user is not a member of.
-  if (!workspace || !member) notFound();
+  if (!member) notFound();
   const role = member.role as Role;
   const canUpload = role !== "viewer";
   const canDelete = role === "owner" || role === "admin";
 
   return (
     <div className="space-y-8">
-      <div>
-        <Link href="/app" className="text-sm text-fg-muted hover:underline">← All workspaces</Link>
-        <h1 className="mt-2 text-2xl font-semibold">{workspace.name}</h1>
-        <p className="text-sm text-fg-muted">Your role: {role}</p>
-      </div>
+      <p className="text-sm text-fg-muted">Your role: {role}</p>
 
       {canUpload && (
         <div className="grid gap-6 lg:grid-cols-3">

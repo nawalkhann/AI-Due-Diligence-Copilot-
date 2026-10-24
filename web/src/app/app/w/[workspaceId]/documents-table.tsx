@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useTransition } from "react";
 import { DOC_TYPES, type DocStatus, type DocumentRow } from "@/lib/types";
@@ -68,7 +69,13 @@ export function DocumentsTable({
           {documents.map((d) => (
             <tr key={d.id} className="border-b border-border last:border-0 align-top">
               <td className="px-5 py-3">
-                <div className="font-medium">{d.title}</div>
+                <div className="font-medium">
+                  {d.status === "ready" ? (
+                    <Link href={`/app/w/${workspaceId}/d/${d.id}`} className="hover:underline">{d.title}</Link>
+                  ) : (
+                    d.title
+                  )}
+                </div>
                 <div className="text-xs text-fg-muted">
                   {DOC_TYPES[d.doc_type]} · {formatBytes(d.size_bytes)}
                   {d.period_end && ` · period ending ${d.period_end}`}

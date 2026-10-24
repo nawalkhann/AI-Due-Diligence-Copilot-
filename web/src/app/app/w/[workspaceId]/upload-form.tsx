@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { kickIngestion } from "../../actions";
 import { ACCEPTED_FILES, DOC_TYPES, MAX_UPLOAD_BYTES, type Company, type DocType } from "@/lib/types";
 
 const EXTENSIONS = Object.values(ACCEPTED_FILES).flat() as string[];
@@ -108,6 +109,7 @@ export function UploadForm({ workspaceId, companies }: { workspaceId: string; co
         update(index, { state: "error", message: err instanceof Error ? err.message : "Upload failed" });
       }
     }
+    await kickIngestion().catch(() => undefined);
     setBusy(false);
     router.refresh();
   }

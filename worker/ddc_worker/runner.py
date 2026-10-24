@@ -80,13 +80,18 @@ def run_forever(settings: Settings) -> None:
     log.info("worker stopped")
 
 
-def run_once(settings: Settings) -> int:
-    """Drain the queue and exit. Useful for tests and cron-style deployments."""
+def run_once(settings: Settings, time_budget_seconds: float | None = None) -> int:
+    """Drain the queue and exit. Useful for tests and serverless or cron-style
+    deployments; with a time budget, no new job is started once it is spent."""
     storage = make_storage(settings)
     embedder = make_embedder(settings)
+    deadline = time.monotonic() + time_budget_seconds if time_budget_seconds else None
     processed = 0
     with connect(settings) as conn:
-        while job := claim_job(conn, settings.worker_id, settings.job_lease_minutes):
+        while deadline is None or time.monotonic() < deadline:
+            job = claim_job(conn, settings.worker_id, settings.job_lease_minutes)
+            if job is None:
+                break
             run_job(conn, job, storage, embedder, settings)
             processed += 1
     return processed

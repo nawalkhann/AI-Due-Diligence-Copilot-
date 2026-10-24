@@ -140,3 +140,40 @@ def test_queue_document_creates_one_job_and_claim_skips_locked(db):
     db.execute("update public.ingestion_jobs set locked_at = now() - interval '1 hour'")
     again = db.execute("select id, attempts, locked_by from public.claim_ingestion_job('w2')")
     assert again.fetchone()[1:] == (2, "w2")
+
+
+def test_match_chunks_is_hybrid_and_respects_rls(db):
+    alice, bob = make_user(db), make_user(db)
+    ws = create_workspace(db, alice)
+    with AsUser(db, alice) as conn:
+        doc = insert_document(conn, ws)
+    vec_a = "[" + ",".join(["1"] + ["0"] * 1023) + "]"
+    vec_b = "[" + ",".join(["0", "1"] + ["0"] * 1022) + "]"
+    for i, (text, vec) in enumerate([("Customer concentration risk is high", vec_a),
+                                     ("Revenue grew in Europe", vec_b)]):
+        db.execute(
+            "insert into public.chunks (document_id, workspace_id, chunk_index, chunk_type,"
+            " page_start, page_end, content, token_count, embedding)"
+            " values (%s, %s, %s, 'text', 1, 1, %s, 5, %s::extensions.vector)",
+            (doc, ws, i, text, vec))
+    query = ("select content from public.match_chunks(%s, %s::extensions.vector, %s, 5)")
+    with AsUser(db, alice) as conn:
+        rows = conn.execute(query, (ws, vec_b, "customer concentration")).fetchall()
+        # both the semantic match and the keyword match are returned
+        assert {r[0] for r in rows} == {"Customer concentration risk is high",
+                                        "Revenue grew in Europe"}
+    with AsUser(db, bob) as conn:
+        assert conn.execute(query, (ws, vec_a, "customer")).fetchall() == []
+
+
+def test_reports_are_workspace_scoped(db):
+    alice, bob = make_user(db), make_user(db)
+    ws = create_workspace(db, alice)
+    with AsUser(db, alice) as conn:
+        conn.execute("insert into public.reports (workspace_id, kind, title, content, model)"
+                     " values (%s, 'risk', 'Risk', 'body', 'm')", (ws,))
+    with AsUser(db, bob) as conn:
+        assert conn.execute("select count(*) from public.reports").fetchone()[0] == 0
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), AsUser(db, bob) as conn:
+        conn.execute("insert into public.reports (workspace_id, kind, title, content, model)"
+                     " values (%s, 'risk', 'x', 'y', 'm')", (ws,))
